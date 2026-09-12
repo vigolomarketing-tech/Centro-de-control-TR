@@ -10,6 +10,7 @@ import Gastos from './pages/Gastos'
 import Turnos from './pages/Turnos'
 import Balance from './pages/Balance'
 import CuentasSocios from './pages/CuentasSocios'
+import Historial from './pages/Historial'
 import Mas from './pages/Mas'
 
 export default function App() {
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="/balance" element={<Balance />} />
         <Route path="/turnos" element={<Turnos />} />
         <Route path="/cuentas" element={<CuentasSocios />} />
+        <Route path="/historial" element={<Historial />} />
         <Route path="/mas" element={<Mas />} />
         <Route path="*" element={<Navigate to="/pedidos" replace />} />
       </Routes>

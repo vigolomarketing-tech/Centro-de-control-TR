@@ -158,7 +158,17 @@ create table if not exists public.pedidos (
 
 comment on table public.pedidos is 'Un pedido cargado durante el servicio. facturacion/costo/ganancia vienen calculados desde el cliente en base a las recetas vigentes.';
 
+-- Estado de cobro y datos del cliente (agregado después de la primera versión;
+-- "add column if not exists" hace que correr este script de nuevo no rompa nada).
+alter table public.pedidos add column if not exists cobrado boolean not null default false;
+alter table public.pedidos add column if not exists cliente_nombre text;
+alter table public.pedidos add column if not exists direccion text;
+alter table public.pedidos add column if not exists notas text;
+
+comment on column public.pedidos.cobrado is 'Si la plata de este pedido ya fue cobrada/rendida o sigue pendiente.';
+
 create unique index if not exists uq_pedidos_local_id on public.pedidos (creado_en_local_id) where creado_en_local_id is not null;
+create index if not exists idx_pedidos_cobrado on public.pedidos (cobrado) where cobrado = false;
 
 create table if not exists public.pedido_items (
   id uuid primary key default gen_random_uuid(),

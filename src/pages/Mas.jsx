@@ -14,6 +14,9 @@ export default function Mas() {
         </div>
 
         <div className="espaciado-v">
+          <Link to="/historial" className="btn btn--secundario" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+            🧾 Historial y cobros
+          </Link>
           <Link to="/turnos" className="btn btn--secundario" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
             🕓 Turnos
           </Link>

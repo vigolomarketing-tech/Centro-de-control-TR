@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { formatCurrency, formatNumber } from '../lib/format'
 import { usePeriodo, aISO } from '../lib/periodo'
@@ -63,7 +64,22 @@ export default function Balance() {
       .sort((a, b) => b.cantidad - a.cantidad)
       .slice(0, 6)
 
-    return { facturacion, costoMercaderia, costoEnvio, gastosTotales, resultadoNeto, ticketPromedio, gastosPorCategoria, pedidosPorZona, ranking }
+    const pendientes = pedidos.filter((p) => !p.cobrado)
+    const pendientesTotal = pendientes.reduce((t, p) => t + Number(p.facturacion), 0)
+
+    return {
+      facturacion,
+      costoMercaderia,
+      costoEnvio,
+      gastosTotales,
+      resultadoNeto,
+      ticketPromedio,
+      gastosPorCategoria,
+      pedidosPorZona,
+      ranking,
+      pendientes,
+      pendientesTotal,
+    }
   }, [pedidos, gastos])
 
   const evolucion = useMemo(() => {
@@ -98,6 +114,8 @@ export default function Balance() {
       ['Parte por socio/empresa (÷6)', resumen.resultadoNeto / 6],
       ['Ticket promedio', resumen.ticketPromedio],
       ['Cantidad de pedidos', pedidos.length],
+      ['Pendientes de cobro (cantidad)', resumen.pendientes.length],
+      ['Pendientes de cobro (monto)', resumen.pendientesTotal],
       [],
       ['Gastos por categoría'],
       ...Object.entries(resumen.gastosPorCategoria).map(([cat, monto]) => [
@@ -175,6 +193,25 @@ export default function Balance() {
                 {formatCurrency(resumen.resultadoNeto / 6)}
               </div>
               <p className="texto-suave">por cada socio y una parte igual para el fondo de la empresa.</p>
+            </div>
+
+            <div className="card">
+              <div className="flex-entre">
+                <h2>Pendientes de cobro</h2>
+                <Link to="/historial" className="link-boton">
+                  Ver todos
+                </Link>
+              </div>
+              {resumen.pendientes.length === 0 ? (
+                <p className="vacio">No hay pedidos pendientes de cobro en este período.</p>
+              ) : (
+                <>
+                  <div className="stat__valor stat__valor--negativo">{formatCurrency(resumen.pendientesTotal)}</div>
+                  <p className="texto-suave">
+                    {resumen.pendientes.length} pedido{resumen.pendientes.length === 1 ? '' : 's'} sin marcar como cobrado.
+                  </p>
+                </>
+              )}
             </div>
 
             <div className="card">

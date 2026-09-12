@@ -6,10 +6,12 @@ import { ZONAS, METODOS_PAGO, costoProducto, precioVigente } from '../lib/calc'
 import { formatCurrency } from '../lib/format'
 import { guardarPedido } from '../lib/offlineQueue'
 import Header from '../components/Header'
+import CargaRapidaWhatsapp from '../components/CargaRapidaWhatsapp'
 
 export default function Pedidos() {
   const { perfil } = useAuth()
   const { socios } = useSocios()
+  const [modo, setModo] = useState('manual') // manual | whatsapp
   const [productos, setProductos] = useState([])
   const [insumosById, setInsumosById] = useState({})
   const [itemsPorProducto, setItemsPorProducto] = useState({})
@@ -137,6 +139,27 @@ export default function Pedidos() {
       <div className="contenido">
         {mensaje && <div className="exito-msg">{mensaje}</div>}
 
+        <div className="periodo-selector">
+          <button className={`chip${modo === 'manual' ? ' activo' : ''}`} onClick={() => setModo('manual')}>
+            Manual
+          </button>
+          <button className={`chip${modo === 'whatsapp' ? ' activo' : ''}`} onClick={() => setModo('whatsapp')}>
+            Pegar WhatsApp
+          </button>
+        </div>
+
+        {modo === 'whatsapp' ? (
+          <CargaRapidaWhatsapp
+            productos={productos}
+            itemsPorProducto={itemsPorProducto}
+            insumosById={insumosById}
+            config={config}
+            socios={socios}
+            creadoPor={perfil?.id}
+            onGuardado={() => setMensaje('')}
+          />
+        ) : (
+          <>
         <div className="seccion-titulo">Productos</div>
         <div className="productos-grid">
           {productos.map((p) => {
@@ -242,6 +265,8 @@ export default function Pedidos() {
         <button className="btn" disabled={carrito.length === 0 || guardando} onClick={confirmarPedido}>
           {guardando ? 'Guardando...' : 'Guardar pedido'}
         </button>
+          </>
+        )}
       </div>
     </>
   )
