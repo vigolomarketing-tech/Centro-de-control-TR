@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { costoProducto, foodCostPct, gananciaUnidad } from '../lib/calc'
+import { costoProducto, foodCostPct, gananciaUnidad, precioSugerido } from '../lib/calc'
 import { formatCurrency, formatDate } from '../lib/format'
 import Header from '../components/Header'
 import Semaforo from '../components/Semaforo'
 import ConfirmDialog from '../components/ConfirmDialog'
+import LineChart from '../components/LineChart'
 
 const TIPOS = [
   { value: 'hamburguesa', label: 'Hamburguesa' },
@@ -20,6 +21,7 @@ export default function Recetas() {
   const [cargando, setCargando] = useState(true)
   const [editando, setEditando] = useState(null) // producto en edición (o {} para nuevo)
   const [aBorrar, setABorrar] = useState(null)
+  const [historial, setHistorial] = useState(null) // { producto, data, cambios }
 
   async function cargarTodo() {
     setCargando(true)
@@ -74,12 +76,34 @@ export default function Recetas() {
     cargarTodo()
   }
 
+  async function verHistorialProducto(producto) {
+    const { data } = await supabase
+      .from('productos_historico')
+      .select('*')
+      .eq('producto_id', producto.id)
+      .order('registrado_at')
+    const cambios = [
+      ...(data || []),
+      { registrado_at: producto.actualizado_at, precio_normal: producto.precio_normal, precio_promo: producto.precio_promo, activo: producto.activo },
+    ]
+    setHistorial({
+      producto,
+      cambios: [...cambios].reverse(),
+      data: cambios.map((c) => ({ x: c.registrado_at, y: Number(c.precio_normal) })),
+    })
+  }
+
   const promoVencida = config?.promo_vencimiento ? new Date(config.promo_vencimiento) < new Date() : false
 
   return (
     <>
       <Header titulo="Recetas y productos" accion={{ label: '+ Nuevo', onClick: () => setEditando({}) }} />
       <div className="contenido">
+        <p className="texto-suave" style={{ marginTop: 0 }}>
+          Estos precios son sólo para esta app de gestión interna. No tocan la
+          landing de pedidos (tacosruth.com), que es un proyecto aparte.
+        </p>
+
         {config && (
           <div className="card">
             <div className="flex-entre">
@@ -116,10 +140,18 @@ export default function Recetas() {
             const costo = costoProducto(items, insumosById)
             const pct = foodCostPct(costo, p.precio_normal)
             const ganancia = gananciaUnidad(costo, p.precio_normal)
+            const sugerido = precioSugerido(costo)
             return (
-              <div key={p.id} className="card">
+              <div key={p.id} className="card" style={!p.activo ? { opacity: 0.6 } : undefined}>
                 <div className="flex-entre">
-                  <h2>{p.nombre}</h2>
+                  <h2>
+                    {p.nombre}
+                    {!p.activo && (
+                      <span className="chip" style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11 }}>
+                        Pausado
+                      </span>
+                    )}
+                  </h2>
                   <Semaforo pct={pct} />
                 </div>
                 <div className="stats-grid">
@@ -142,9 +174,15 @@ export default function Recetas() {
                     <div className="stat__valor">{p.precio_promo ? formatCurrency(p.precio_promo) : '—'}</div>
                   </div>
                 </div>
+                <p className="texto-suave" style={{ marginBottom: 0 }}>
+                  Precio sugerido para 33% de food cost: <strong>{formatCurrency(sugerido)}</strong>
+                </p>
                 <div className="btn-fila" style={{ marginTop: 12 }}>
                   <button className="btn btn--secundario btn--chico" onClick={() => setEditando(p)}>
                     Editar receta
+                  </button>
+                  <button className="link-boton" onClick={() => verHistorialProducto(p)}>
+                    Historial
                   </button>
                   <button className="link-boton" style={{ color: 'var(--rojo)' }} onClick={() => setABorrar(p)}>
                     Borrar
@@ -176,6 +214,30 @@ export default function Recetas() {
         onConfirmar={borrarProducto}
         onCancelar={() => setABorrar(null)}
       />
+
+      {historial && (
+        <div className="modal-fondo" onClick={() => setHistorial(null)}>
+          <div className="modal-caja" onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ marginTop: 0 }}>{historial.producto.nombre}</h2>
+            <p className="texto-suave">Evolución del precio normal</p>
+            <LineChart data={historial.data} />
+            <div className="seccion-titulo">Cambios</div>
+            {historial.cambios.map((c, i) => (
+              <div key={i} className="flex-entre" style={{ padding: '6px 0', borderBottom: '1px solid var(--borde)' }}>
+                <span className="texto-suave">{formatDate(c.registrado_at)}</span>
+                <span>
+                  {formatCurrency(c.precio_normal)}
+                  {c.precio_promo ? ` · promo ${formatCurrency(c.precio_promo)}` : ''}
+                  {!c.activo ? ' · pausado' : ''}
+                </span>
+              </div>
+            ))}
+            <button className="btn btn--secundario" style={{ marginTop: 16 }} onClick={() => setHistorial(null)}>
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -186,6 +248,7 @@ function EditorReceta({ producto, items, insumos, onCerrar, onGuardado }) {
   const [tipo, setTipo] = useState(producto.tipo || 'hamburguesa')
   const [precioNormal, setPrecioNormal] = useState(producto.precio_normal ?? '')
   const [precioPromo, setPrecioPromo] = useState(producto.precio_promo ?? '')
+  const [activo, setActivo] = useState(producto.activo ?? true)
   const [lineas, setLineas] = useState(
     items.length > 0
       ? items.map((i) => ({ insumo_id: i.insumo_id, cantidad: i.cantidad }))
@@ -228,6 +291,7 @@ function EditorReceta({ producto, items, insumos, onCerrar, onGuardado }) {
       tipo,
       precio_normal: Number(precioNormal),
       precio_promo: precioPromo === '' ? null : Number(precioPromo),
+      activo,
     }
     let productoId = producto.id
     if (esNuevo) {
@@ -288,6 +352,19 @@ function EditorReceta({ producto, items, insumos, onCerrar, onGuardado }) {
               <label>Precio promo (opcional)</label>
               <input type="number" min="0" value={precioPromo} onChange={(e) => setPrecioPromo(e.target.value)} />
             </div>
+          </div>
+
+          <div>
+            <label>Estado</label>
+            <div className="chip-selector">
+              <button type="button" className={`chip${activo ? ' activo' : ''}`} onClick={() => setActivo(true)}>
+                Activo
+              </button>
+              <button type="button" className={`chip${!activo ? ' activo' : ''}`} onClick={() => setActivo(false)}>
+                Pausado
+              </button>
+            </div>
+            <p className="texto-suave">Pausado lo saca de la pantalla de Pedidos sin borrarlo del catálogo.</p>
           </div>
 
           <div className="seccion-titulo">Insumos de la receta</div>

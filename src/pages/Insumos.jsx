@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { CATEGORIAS_INSUMO, UNIDADES, costoUnitarioInsumo } from '../lib/calc'
-import { formatCurrency, formatDate, formatNumber } from '../lib/format'
+import { CATEGORIAS_INSUMO, UNIDADES, costoUnitarioInsumo, costoProducto, foodCostPct } from '../lib/calc'
+import { formatCurrency, formatDate, formatNumber, formatPercent } from '../lib/format'
 import Header from '../components/Header'
 import ConfirmDialog from '../components/ConfirmDialog'
 import LineChart from '../components/LineChart'
@@ -29,6 +29,7 @@ export default function Insumos() {
   const [error, setError] = useState('')
   const [aBorrar, setABorrar] = useState(null)
   const [historial, setHistorial] = useState(null) // { insumo, data }
+  const [alertaFoodCost, setAlertaFoodCost] = useState(null) // [{ nombre, pct }]
 
   async function cargar() {
     setCargando(true)
@@ -74,7 +75,8 @@ export default function Insumos() {
       unidad: form.unidad,
       proveedor: form.proveedor.trim() || null,
     }
-    const query = editandoId
+    const eraEdicion = !!editandoId
+    const query = eraEdicion
       ? supabase.from('insumos').update(payload).eq('id', editandoId)
       : supabase.from('insumos').insert(payload)
     const { error } = await query
@@ -85,6 +87,42 @@ export default function Insumos() {
     }
     setModal(null)
     cargar()
+    if (eraEdicion) revisarFoodCostAfectados(editandoId)
+  }
+
+  // Después de cambiar el precio/cantidad de un insumo, recalcula el food cost
+  // de todos los productos que lo usan y avisa si alguno pasó el 40%.
+  async function revisarFoodCostAfectados(insumoId) {
+    const { data: relaciones } = await supabase.from('producto_insumos').select('producto_id').eq('insumo_id', insumoId)
+    const productoIds = [...new Set((relaciones || []).map((r) => r.producto_id))]
+    if (productoIds.length === 0) {
+      setAlertaFoodCost(null)
+      return
+    }
+
+    const [{ data: productosAfectados }, { data: todosLosItems }, { data: todosLosInsumos }] = await Promise.all([
+      supabase.from('productos').select('id, nombre, precio_normal').in('id', productoIds).eq('activo', true),
+      supabase.from('producto_insumos').select('*').in('producto_id', productoIds),
+      supabase.from('insumos').select('*'),
+    ])
+
+    const insumosByIdFresco = {}
+    ;(todosLosInsumos || []).forEach((i) => (insumosByIdFresco[i.id] = i))
+    const itemsPorProductoFresco = {}
+    ;(todosLosItems || []).forEach((it) => {
+      if (!itemsPorProductoFresco[it.producto_id]) itemsPorProductoFresco[it.producto_id] = []
+      itemsPorProductoFresco[it.producto_id].push(it)
+    })
+
+    const afectados = (productosAfectados || [])
+      .map((p) => {
+        const costo = costoProducto(itemsPorProductoFresco[p.id] || [], insumosByIdFresco)
+        return { nombre: p.nombre, pct: foodCostPct(costo, p.precio_normal) }
+      })
+      .filter((p) => p.pct > 40)
+      .sort((a, b) => b.pct - a.pct)
+
+    setAlertaFoodCost(afectados.length > 0 ? afectados : null)
   }
 
   async function borrar() {
@@ -114,6 +152,27 @@ export default function Insumos() {
     <>
       <Header titulo="Insumos" accion={{ label: '+ Nuevo', onClick: abrirCrear }} />
       <div className="contenido">
+        <p className="texto-suave" style={{ marginTop: 0 }}>
+          Estos precios son sólo para esta app de gestión interna. No tocan la
+          landing de pedidos (tacosruth.com), que es un proyecto aparte.
+        </p>
+
+        {alertaFoodCost && (
+          <div className="error-msg" style={{ fontWeight: 700 }}>
+            ⚠ Con este precio nuevo, {alertaFoodCost.length === 1 ? 'este producto pasó' : 'estos productos pasaron'} el 40% de food cost:
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontWeight: 600 }}>
+              {alertaFoodCost.map((p) => (
+                <li key={p.nombre}>
+                  {p.nombre} — {formatPercent(p.pct)}
+                </li>
+              ))}
+            </ul>
+            <button className="link-boton" style={{ color: 'var(--rojo)', marginTop: 4 }} onClick={() => setAlertaFoodCost(null)}>
+              Cerrar
+            </button>
+          </div>
+        )}
+
         {cargando ? (
           <p className="cargando">Cargando insumos...</p>
         ) : insumos.length === 0 ? (

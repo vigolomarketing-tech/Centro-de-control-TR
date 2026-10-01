@@ -116,6 +116,44 @@ create table if not exists public.productos (
 
 comment on table public.productos is 'Productos que se venden. El costo y el food cost se calculan desde producto_insumos.';
 
+alter table public.productos add column if not exists actualizado_at timestamptz not null default now();
+
+-- Histórico de precio de venta: guarda el valor ANTERIOR cada vez que cambia
+-- precio_normal, precio_promo o activo (para ver cuánto aumentó cada producto).
+create table if not exists public.productos_historico (
+  id uuid primary key default gen_random_uuid(),
+  producto_id uuid not null references public.productos (id) on delete cascade,
+  precio_normal numeric(12, 2) not null,
+  precio_promo numeric(12, 2),
+  activo boolean not null,
+  registrado_at timestamptz not null default now()
+);
+
+comment on table public.productos_historico is 'Snapshot del precio de venta anterior de un producto, para graficar su evolución.';
+
+create or replace function public.registrar_historico_producto()
+returns trigger
+language plpgsql
+as $$
+begin
+  if (old.precio_normal is distinct from new.precio_normal)
+     or (old.precio_promo is distinct from new.precio_promo)
+     or (old.activo is distinct from new.activo) then
+    insert into public.productos_historico (producto_id, precio_normal, precio_promo, activo)
+    values (old.id, old.precio_normal, old.precio_promo, old.activo);
+    new.actualizado_at := now();
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_productos_historico on public.productos;
+create trigger trg_productos_historico
+  before update on public.productos
+  for each row execute procedure public.registrar_historico_producto();
+
+create index if not exists idx_productos_historico_producto on public.productos_historico (producto_id);
+
 create table if not exists public.producto_insumos (
   id uuid primary key default gen_random_uuid(),
   producto_id uuid not null references public.productos (id) on delete cascade,
@@ -230,6 +268,7 @@ alter table public.profiles enable row level security;
 alter table public.insumos enable row level security;
 alter table public.insumos_historico enable row level security;
 alter table public.productos enable row level security;
+alter table public.productos_historico enable row level security;
 alter table public.producto_insumos enable row level security;
 alter table public.configuracion enable row level security;
 alter table public.pedidos enable row level security;
@@ -244,7 +283,7 @@ declare
   t text;
 begin
   for t in select unnest(array[
-    'profiles', 'insumos', 'insumos_historico', 'productos', 'producto_insumos',
+    'profiles', 'insumos', 'insumos_historico', 'productos', 'productos_historico', 'producto_insumos',
     'configuracion', 'pedidos', 'pedido_items', 'gastos', 'turnos'
   ])
   loop

@@ -67,6 +67,14 @@ export function semaforoFoodCost(pct) {
   return 'rojo'
 }
 
+// Precio sugerido para llegar a un food cost objetivo (33% por defecto),
+// redondeado al múltiplo de $500 más cercano, para tener de referencia.
+export function precioSugerido(costo, objetivoFoodCost = 0.33, redondeo = 500) {
+  if (!costo) return 0
+  const crudo = costo / objetivoFoodCost
+  return Math.round(crudo / redondeo) * redondeo
+}
+
 export function precioVigente(producto, promoActiva, promoVencimiento) {
   const vencida = promoVencimiento ? new Date(promoVencimiento) < new Date() : false
   if (promoActiva && !vencida && producto.precio_promo != null) {
